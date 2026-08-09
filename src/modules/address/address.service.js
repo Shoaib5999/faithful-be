@@ -1,7 +1,7 @@
 const prisma = require('../../config/db');
 
 const addAddress = async (userId, data) => {
-    const { label, name, phone, line1, line2, city, state, pincode, isDefault } = data;
+    const { label, name, phone, line1, line2, city, state, pincode, isDefault, latitude, longitude } = data;
 
     if (isDefault) {
         await prisma.address.updateMany({
@@ -23,6 +23,8 @@ const addAddress = async (userId, data) => {
             city,
             state,
             pincode,
+            latitude: latitude ?? null,
+            longitude: longitude ?? null,
             isDefault: addressCount === 0 ? true : (isDefault || false),
         },
     });
