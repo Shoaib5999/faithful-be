@@ -36,6 +36,7 @@ const cutTypeRoutes = require('./src/modules/cut-type/cut-type.routes');
 const contactRoutes = require('./src/modules/contact/contact.routes');
 const newsletterRoutes = require('./src/modules/newsletter/newsletter.routes');
 const paymentController = require('./src/modules/payment/payment.controller');
+const sitemapController = require('./src/modules/sitemap/sitemap.controller');
 
 const app = express();
 
@@ -132,6 +133,9 @@ app.get('/health', (req, res) => {
         uptime: process.uptime(),
     });
 });
+
+// ─── SITEMAP (proxied from faithfulmeat.in/sitemap.xml via vercel.json) ──
+app.get('/sitemap.xml', sitemapController.generate);
 
 // ─── ROUTES ──────────────────────────────────────────────────────
 app.use('/api/auth', (req, res, next) => {
