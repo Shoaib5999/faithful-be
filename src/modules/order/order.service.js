@@ -128,30 +128,36 @@ const placeOrder = async (
 
     // Create order transaction
     const order = await prisma.$transaction(async (tx) => {
-        // Deduct stock safely
-        for (const item of summary.cart.items) {
-            const updated = await tx.productVariant.updateMany({
-                where: {
-                    id: item.variantId,
-                    stockQty: {
-                        gte: item.quantity,
+        // Deduct stock safely (independent rows, run concurrently to save round trips)
+        const stockUpdates = await Promise.all(
+            summary.cart.items.map((item) =>
+                tx.productVariant.updateMany({
+                    where: {
+                        id: item.variantId,
+                        stockQty: {
+                            gte: item.quantity,
+                        },
                     },
-                },
-                data: {
-                    stockQty: {
-                        decrement: item.quantity,
+                    data: {
+                        stockQty: {
+                            decrement: item.quantity,
+                        },
                     },
-                },
-            });
+                }),
+            ),
+        );
 
-            if (updated.count === 0) {
-                const err = new Error(
-                    `Insufficient stock for variant ${item.variantId}`
-                );
+        const shortItem = summary.cart.items.find(
+            (_, index) => stockUpdates[index].count === 0,
+        );
 
-                err.statusCode = 400;
-                throw err;
-            }
+        if (shortItem) {
+            const err = new Error(
+                `Insufficient stock for variant ${shortItem.variantId}`
+            );
+
+            err.statusCode = 400;
+            throw err;
         }
 
         // Create order
@@ -189,38 +195,41 @@ const placeOrder = async (
             },
         });
 
-        // Create payment record
-        await tx.payment.create({
-            data: {
-                orderId: newOrder.id,
-                amount: summary.total,
-                paymentModeId,
-                status: isOnlinePaid ? 'PAID' : 'PENDING',
-                razorpayOrderId: onlinePayment?.razorpayOrderId ?? null,
-                razorpayPaymentId: onlinePayment?.razorpayPaymentId ?? null,
-                razorpaySignature: onlinePayment?.razorpaySignature ?? null,
-            },
-        });
-
-        // Coupon usage
-        if (couponId) {
-            await tx.coupon.update({
-                where: { id: couponId },
+        // Create payment record and record coupon usage concurrently
+        await Promise.all([
+            tx.payment.create({
                 data: {
-                    usedCount: {
-                        increment: 1,
-                    },
-                },
-            });
-
-            await tx.couponUsage.create({
-                data: {
-                    couponId,
-                    userId,
                     orderId: newOrder.id,
+                    amount: summary.total,
+                    paymentModeId,
+                    status: isOnlinePaid ? 'PAID' : 'PENDING',
+                    razorpayOrderId: onlinePayment?.razorpayOrderId ?? null,
+                    razorpayPaymentId: onlinePayment?.razorpayPaymentId ?? null,
+                    razorpaySignature: onlinePayment?.razorpaySignature ?? null,
                 },
-            });
-        }
+            }),
+
+            couponId
+                ? tx.coupon.update({
+                    where: { id: couponId },
+                    data: {
+                        usedCount: {
+                            increment: 1,
+                        },
+                    },
+                })
+                : Promise.resolve(),
+
+            couponId
+                ? tx.couponUsage.create({
+                    data: {
+                        couponId,
+                        userId,
+                        orderId: newOrder.id,
+                    },
+                })
+                : Promise.resolve(),
+        ]);
 
         return newOrder;
     });
