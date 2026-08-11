@@ -1,5 +1,9 @@
 const prisma = require('../../config/db');
 const slugify = require('../../utils/slugify');
+const { getOrSetCache, invalidateNamespace } = require('../../utils/cache');
+
+const CACHE_TTL = 300;
+const invalidateCutTypeCache = () => invalidateNamespace('cuttype');
 
 const mapType = (row) => ({
     id: row.id,
@@ -20,7 +24,8 @@ const getAllTypes = async ({ activeOnly = false } = {}) => {
     return rows.map(mapType);
 };
 
-const getPublicTypes = async () => getAllTypes({ activeOnly: true });
+const getPublicTypes = async () =>
+    getOrSetCache(['cuttype'], ['public'], CACHE_TTL, () => getAllTypes({ activeOnly: true }));
 
 const getTypeById = async (id) => {
     const row = await prisma.cutType.findUnique({ where: { id } });
@@ -51,6 +56,7 @@ const createType = async ({ name, slug, imageUrl, sortOrder, isActive }) => {
             isActive: isActive ?? true,
         },
     });
+    await invalidateCutTypeCache();
     return mapType(row);
 };
 
@@ -84,12 +90,14 @@ const updateType = async (id, data) => {
             ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
         },
     });
+    await invalidateCutTypeCache();
     return mapType(row);
 };
 
 const deleteType = async (id) => {
     await getTypeById(id);
     await prisma.cutType.delete({ where: { id } });
+    await invalidateCutTypeCache();
 };
 
 const reorderTypes = async (orderedIds) => {
@@ -107,6 +115,8 @@ const reorderTypes = async (orderedIds) => {
             }),
         ),
     );
+
+    await invalidateCutTypeCache();
 
     return getAllTypes();
 };

@@ -1,9 +1,19 @@
 const prisma = require('../../config/db');
 const slugify = require('../../utils/slugify');
 const { normalizeSKU, ensureUniqueVariantSKUs } = require('../../utils/variant-sku');
+const { getOrSetCache, invalidateNamespace } = require('../../utils/cache');
 
 const STOREFRONT_MAX_LIMIT = 50;
 const ADMIN_MAX_LIMIT = 100;
+const CACHE_TTL = 300;
+
+// Product reads embed brand/category/taxClass, so their cache must be invalidated
+// whenever any of those namespaces changes, not just 'product' itself.
+const PRODUCT_READ_DEPS = ['product', 'category', 'masterdata'];
+
+// Every write that can change what a storefront product read returns (price, stock,
+// name, images, variants, active state, ...) must call this before returning.
+const invalidateProductCache = () => invalidateNamespace('product');
 
 const clampLimit = (value, max) =>
     Math.min(Math.max(Number(value) || 20, 1), max);
@@ -132,6 +142,8 @@ const createProduct = async ({
             },
         });
 
+    await invalidateProductCache();
+
     return product;
 };
 
@@ -213,7 +225,12 @@ const getAdminProducts = async ({
     };
 };
 
-const getAllProducts = async ({
+const getAllProducts = async (params) =>
+    getOrSetCache(PRODUCT_READ_DEPS, ['product-list', params], CACHE_TTL, () =>
+        fetchAllProducts(params),
+    );
+
+const fetchAllProducts = async ({
     page = 1,
     limit = 20,
     categoryId,
@@ -414,7 +431,12 @@ const getAllProducts = async ({
     };
 };
 
-const getProductById = async (id) => {
+const getProductById = async (id) =>
+    getOrSetCache(PRODUCT_READ_DEPS, ['product-by-id', id], CACHE_TTL, () =>
+        fetchProductById(id),
+    );
+
+const fetchProductById = async (id) => {
     const product =
         await prisma.product.findUnique({
             where: { id },
@@ -486,7 +508,12 @@ const getProductById = async (id) => {
     };
 };
 
-const getProductBySlug = async (slug) => {
+const getProductBySlug = async (slug) =>
+    getOrSetCache(PRODUCT_READ_DEPS, ['product-by-slug', slug], CACHE_TTL, () =>
+        fetchProductBySlug(slug),
+    );
+
+const fetchProductBySlug = async (slug) => {
     const product = await prisma.product.findFirst({
         where: { slug, isActive: true },
         include: {
@@ -570,7 +597,7 @@ const updateProduct = async (id, data) => {
         productData.taxClassId = null;
     }
 
-    return prisma.product.update({
+    const product = await prisma.product.update({
         where: { id },
         data: productData,
         include: {
@@ -583,6 +610,10 @@ const updateProduct = async (id, data) => {
             taxClass: true,
         },
     });
+
+    await invalidateProductCache();
+
+    return product;
 };
 
 const deleteProduct = async (id) => {
@@ -593,13 +624,15 @@ const deleteProduct = async (id) => {
             isActive: false,
         },
     });
+
+    await invalidateProductCache();
 };
 
 const addVariant = async (productId, { weightGrams, price, compareAtPrice, stockQty, sku }) => {
     const normalizedSKU = normalizeSKU(sku);
     await ensureUniqueVariantSKUs([{ sku: normalizedSKU }]);
 
-    return prisma.productVariant.create({
+    const variant = await prisma.productVariant.create({
         data: {
             productId,
             weightGrams: Number(weightGrams),
@@ -612,6 +645,10 @@ const addVariant = async (productId, { weightGrams, price, compareAtPrice, stock
             sku: normalizedSKU,
         },
     });
+
+    await invalidateProductCache();
+
+    return variant;
 };
 
 const updateVariant = async (
@@ -628,10 +665,15 @@ const updateVariant = async (
         );
     }
 
-    return prisma.productVariant.update({
+    const variant = await prisma.productVariant.update({
         where: { id: variantId },
         data: updateData,
     });
+
+    // Price/stock changes must be visible immediately — bump before returning.
+    await invalidateProductCache();
+
+    return variant;
 };
 
 const deleteVariant = async (
@@ -646,13 +688,15 @@ const deleteVariant = async (
             isActive: false,
         },
     });
+
+    await invalidateProductCache();
 };
 
 const updateStock = async (
     variantId,
     stockQty
 ) => {
-    return await prisma.productVariant.update(
+    const variant = await prisma.productVariant.update(
         {
             where: {
                 id: variantId,
@@ -664,6 +708,10 @@ const updateStock = async (
             },
         }
     );
+
+    await invalidateProductCache();
+
+    return variant;
 };
 
 const addProductImage = async (
@@ -689,7 +737,7 @@ const addProductImage = async (
         );
     }
 
-    return await prisma.productImage.create(
+    const image = await prisma.productImage.create(
         {
             data: {
                 productId,
@@ -704,6 +752,10 @@ const addProductImage = async (
             },
         }
     );
+
+    await invalidateProductCache();
+
+    return image;
 };
 
 const deleteProductImage = async (
@@ -730,6 +782,8 @@ const deleteProductImage = async (
             id: imageId,
         },
     });
+
+    await invalidateProductCache();
 
     return image.cloudinaryId;
 };

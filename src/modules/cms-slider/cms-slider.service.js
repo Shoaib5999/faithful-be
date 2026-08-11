@@ -1,4 +1,8 @@
 const prisma = require('../../config/db');
+const { getOrSetCache, invalidateNamespace } = require('../../utils/cache');
+
+const CACHE_TTL = 300;
+const invalidateSliderCache = () => invalidateNamespace('cmsslider');
 
 const mapSlider = (row) => ({
     id: row.id,
@@ -23,15 +27,16 @@ const getAllSliders = async () => {
     return rows.map(mapSlider);
 };
 
-const getPublicSliders = async () => {
-    const rows = await prisma.cmsSlider.findMany({
-        where: { isActive: true },
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+const getPublicSliders = async () =>
+    getOrSetCache(['cmsslider'], ['public'], CACHE_TTL, async () => {
+        const rows = await prisma.cmsSlider.findMany({
+            where: { isActive: true },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        });
+        return rows
+            .map(mapSlider)
+            .filter((slider) => slider.imageUrl || slider.imageUrlMobile);
     });
-    return rows
-        .map(mapSlider)
-        .filter((slider) => slider.imageUrl || slider.imageUrlMobile);
-};
 
 const getSliderById = async (id) => {
     const row = await prisma.cmsSlider.findUnique({ where: { id } });
@@ -62,6 +67,8 @@ const createSlider = async (data) => {
         },
     });
 
+    await invalidateSliderCache();
+
     return mapSlider(row);
 };
 
@@ -88,12 +95,15 @@ const updateSlider = async (id, data) => {
         },
     });
 
+    await invalidateSliderCache();
+
     return mapSlider(row);
 };
 
 const deleteSlider = async (id) => {
     await getSliderById(id);
     await prisma.cmsSlider.delete({ where: { id } });
+    await invalidateSliderCache();
 };
 
 const reorderSliders = async (orderedIds) => {
@@ -111,6 +121,8 @@ const reorderSliders = async (orderedIds) => {
             }),
         ),
     );
+
+    await invalidateSliderCache();
 
     return getAllSliders();
 };

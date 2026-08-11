@@ -1,4 +1,8 @@
 const prisma = require('../../config/db');
+const { getOrSetCache, invalidateNamespace } = require('../../utils/cache');
+
+const CACHE_TTL = 300;
+const invalidateHomeImageCache = () => invalidateNamespace('cmshomeimage');
 
 const DEFAULT_SLOTS = [
     {
@@ -118,16 +122,17 @@ const getAllHomeImages = async () => {
     return rows.map(mapHomeImage);
 };
 
-const getPublicHomeImages = async () => {
-    await ensureDefaultSlots();
-    const rows = await prisma.cmsHomeImage.findMany({
-        where: { isActive: true },
-        orderBy: [{ section: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+const getPublicHomeImages = async () =>
+    getOrSetCache(['cmshomeimage'], ['public'], CACHE_TTL, async () => {
+        await ensureDefaultSlots();
+        const rows = await prisma.cmsHomeImage.findMany({
+            where: { isActive: true },
+            orderBy: [{ section: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+        });
+        return rows
+            .map(mapHomeImage)
+            .filter((item) => item.imageUrl || item.imageUrlMobile);
     });
-    return rows
-        .map(mapHomeImage)
-        .filter((item) => item.imageUrl || item.imageUrlMobile);
-};
 
 const getHomeImageById = async (id) => {
     const row = await prisma.cmsHomeImage.findUnique({ where: { id } });
@@ -154,6 +159,8 @@ const updateHomeImage = async (id, data) => {
             ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
         },
     });
+
+    await invalidateHomeImageCache();
 
     return mapHomeImage(row);
 };

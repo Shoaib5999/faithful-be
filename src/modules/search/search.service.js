@@ -1,4 +1,7 @@
 const prisma = require('../../config/db');
+const { getOrSetCache } = require('../../utils/cache');
+
+const FILTER_CACHE_TTL = 300;
 
 const searchProducts = async ({
     q,
@@ -178,44 +181,45 @@ const searchProducts = async ({
     };
 };
 
-const getFilterOptions = async (categorySlug) => {
-    const where = { isActive: true };
-    if (categorySlug) {
-        const category = await prisma.category.findUnique({ where: { slug: categorySlug } });
-        if (category) where.categoryId = category.id;
-    }
+const getFilterOptions = async (categorySlug) =>
+    getOrSetCache(['product', 'category'], ['filters', categorySlug], FILTER_CACHE_TTL, async () => {
+        const where = { isActive: true };
+        if (categorySlug) {
+            const category = await prisma.category.findUnique({ where: { slug: categorySlug } });
+            if (category) where.categoryId = category.id;
+        }
 
-    const [priceRange, categories] = await Promise.all([
-        // Min and max price across all active variants
-        prisma.productVariant.aggregate({
-            where: { isActive: true, product: where },
-            _min: { price: true },
-            _max: { price: true },
-        }),
-        // All active categories
-        prisma.category.findMany({
-            where: { isActive: true },
-            select: { id: true, name: true, slug: true },
-            orderBy: { name: 'asc' },
-        }),
-    ]);
+        const [priceRange, categories] = await Promise.all([
+            // Min and max price across all active variants
+            prisma.productVariant.aggregate({
+                where: { isActive: true, product: where },
+                _min: { price: true },
+                _max: { price: true },
+            }),
+            // All active categories
+            prisma.category.findMany({
+                where: { isActive: true },
+                select: { id: true, name: true, slug: true },
+                orderBy: { name: 'asc' },
+            }),
+        ]);
 
-    return {
-        priceRange: {
-            min: Number(priceRange._min.price || 0),
-            max: Number(priceRange._max.price || 0),
-        },
-        categories,
-        sortOptions: [
-            { value: 'newest', label: 'Newest First' },
-            { value: 'price_asc', label: 'Price: Low to High' },
-            { value: 'price_desc', label: 'Price: High to Low' },
-            { value: 'rating', label: 'Top Rated' },
-            { value: 'popular', label: 'Most Popular' },
-        ],
-        ratingOptions: [5, 4, 3, 2, 1],
-    };
-};
+        return {
+            priceRange: {
+                min: Number(priceRange._min.price || 0),
+                max: Number(priceRange._max.price || 0),
+            },
+            categories,
+            sortOptions: [
+                { value: 'newest', label: 'Newest First' },
+                { value: 'price_asc', label: 'Price: Low to High' },
+                { value: 'price_desc', label: 'Price: High to Low' },
+                { value: 'rating', label: 'Top Rated' },
+                { value: 'popular', label: 'Most Popular' },
+            ],
+            ratingOptions: [5, 4, 3, 2, 1],
+        };
+    });
 
 const getSuggestions = async (q, limit = 6) => {
     if (!q || q.trim().length < 2) return [];

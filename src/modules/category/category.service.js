@@ -1,5 +1,12 @@
 const prisma = require('../../config/db');
 const slugify = require('../../utils/slugify');
+const { getOrSetCache, invalidateNamespace } = require('../../utils/cache');
+
+const CACHE_TTL = 300;
+
+// Category objects are embedded in cached product reads (product.service.js), so any
+// write here must also invalidate 'category' — bumping it is what makes those go stale too.
+const invalidateCategoryCache = () => invalidateNamespace('category');
 
 const createCategory = async ({ name, parentId, sortOrder }) => {
     const slug = slugify(name);
@@ -11,33 +18,39 @@ const createCategory = async ({ name, parentId, sortOrder }) => {
         throw err;
     }
 
-    return await prisma.category.create({
+    const category = await prisma.category.create({
         data: { name, slug, parentId: parentId || null, sortOrder: sortOrder || 0 },
     });
-};
 
-const getAllCategories = async () => {
-    return await prisma.category.findMany({
-        where: { isActive: true, parentId: null },
-        include: { children: { where: { isActive: true } } },
-        orderBy: { sortOrder: 'asc' },
-    });
-};
-
-const getCategoryById = async (id) => {
-    const category = await prisma.category.findUnique({
-        where: { id },
-        include: { children: true },
-    });
-
-    if (!category) {
-        const err = new Error('Category not found');
-        err.statusCode = 404;
-        throw err;
-    }
+    await invalidateCategoryCache();
 
     return category;
 };
+
+const getAllCategories = async () =>
+    getOrSetCache(['category'], ['category-list'], CACHE_TTL, async () => {
+        return prisma.category.findMany({
+            where: { isActive: true, parentId: null },
+            include: { children: { where: { isActive: true } } },
+            orderBy: { sortOrder: 'asc' },
+        });
+    });
+
+const getCategoryById = async (id) =>
+    getOrSetCache(['category'], ['category-by-id', id], CACHE_TTL, async () => {
+        const category = await prisma.category.findUnique({
+            where: { id },
+            include: { children: true },
+        });
+
+        if (!category) {
+            const err = new Error('Category not found');
+            err.statusCode = 404;
+            throw err;
+        }
+
+        return category;
+    });
 
 const updateCategory = async (id, { name, parentId, isActive, sortOrder }) => {
     const updateData = {};
@@ -49,7 +62,11 @@ const updateCategory = async (id, { name, parentId, isActive, sortOrder }) => {
     if (isActive !== undefined) updateData.isActive = isActive;
     if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
 
-    return await prisma.category.update({ where: { id }, data: updateData });
+    const category = await prisma.category.update({ where: { id }, data: updateData });
+
+    await invalidateCategoryCache();
+
+    return category;
 };
 
 const deleteCategory = async (id) => {
@@ -61,6 +78,8 @@ const deleteCategory = async (id) => {
     }
 
     await prisma.category.delete({ where: { id } });
+
+    await invalidateCategoryCache();
 };
 
 module.exports = { createCategory, getAllCategories, getCategoryById, updateCategory, deleteCategory };

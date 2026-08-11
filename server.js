@@ -28,6 +28,12 @@ const startServer = async () => {
             console.warn('⚠️  R2 storage not configured — image uploads will fail until R2_* env vars are set');
         }
 
+        if (process.env.REDIS_URL) {
+            console.log('⏳ Connecting to Redis...');
+        } else {
+            console.warn('⚠️  REDIS_URL not set — caching disabled, all reads hit the DB directly');
+        }
+
         const { getEmailStatus } = require('./src/config/mailer');
         const emailStatus = getEmailStatus();
         if (emailStatus.resend) {
@@ -53,6 +59,12 @@ const startServer = async () => {
             server.close(async () => {
                 await prisma.$disconnect();
                 console.log('✅ Database disconnected');
+
+                const { client: redisClient } = require('./src/config/redis');
+                if (redisClient) {
+                    await redisClient.quit().catch(() => {});
+                }
+
                 process.exit(0);
             });
         };

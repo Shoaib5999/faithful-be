@@ -1,11 +1,22 @@
 const prisma = require('../../config/db');
 const slugify = require('../../utils/slugify');
+const { getOrSetCache, invalidateNamespace } = require('../../utils/cache');
+
+const CACHE_TTL = 300;
+// Brand/unit/attribute/order-status/tax-class/payment-mode/currency are all small,
+// rarely-written admin config lists — one shared namespace keeps invalidation simple.
+// They're also embedded in cached product reads (brand, taxClass), so product.service.js
+// depends on this same namespace.
+const invalidateMasterdataCache = () => invalidateNamespace('masterdata');
+// Category writes here touch the same table category.service.js caches under 'category'.
+const invalidateCategoryCache = () => invalidateNamespace('category');
 
 // ── BRAND ────────────────────────────────────────────────────────
 
-const getAllBrands = async () => {
-    return prisma.brand.findMany({ orderBy: { sortOrder: 'asc' } });
-};
+const getAllBrands = async () =>
+    getOrSetCache(['masterdata'], ['brands'], CACHE_TTL, () =>
+        prisma.brand.findMany({ orderBy: { sortOrder: 'asc' } }),
+    );
 
 const createBrand = async ({ name, logoUrl, isFeatured, sortOrder, isActive }) => {
     const slug = slugify(name);
@@ -15,16 +26,20 @@ const createBrand = async ({ name, logoUrl, isFeatured, sortOrder, isActive }) =
         err.statusCode = 409;
         throw err;
     }
-    return prisma.brand.create({
+    const brand = await prisma.brand.create({
         data: { name, slug, logoUrl: logoUrl || null, isFeatured: isFeatured || false, sortOrder: sortOrder || 0, isActive: isActive ?? true },
     });
+    await invalidateMasterdataCache();
+    return brand;
 };
 
 const updateBrand = async (id, data) => {
     const brand = await prisma.brand.findUnique({ where: { id } });
     if (!brand) { const err = new Error('Brand not found'); err.statusCode = 404; throw err; }
     if (data.name) data.slug = slugify(data.name);
-    return prisma.brand.update({ where: { id }, data });
+    const updated = await prisma.brand.update({ where: { id }, data });
+    await invalidateMasterdataCache();
+    return updated;
 };
 
 const deleteBrand = async (id) => {
@@ -35,28 +50,35 @@ const deleteBrand = async (id) => {
         throw err;
     }
     await prisma.brand.delete({ where: { id } });
+    await invalidateMasterdataCache();
 };
 
 // ── UNIT ─────────────────────────────────────────────────────────
 
-const getAllUnits = async () => {
-    return prisma.unit.findMany({ orderBy: { sortOrder: 'asc' } });
-};
+const getAllUnits = async () =>
+    getOrSetCache(['masterdata'], ['units'], CACHE_TTL, () =>
+        prisma.unit.findMany({ orderBy: { sortOrder: 'asc' } }),
+    );
 
 const createUnit = async ({ name, symbol, type, isActive, sortOrder }) => {
-    return prisma.unit.create({
+    const unit = await prisma.unit.create({
         data: { name, symbol, type, isActive: isActive ?? true, sortOrder: sortOrder || 0 },
     });
+    await invalidateMasterdataCache();
+    return unit;
 };
 
 const updateUnit = async (id, data) => {
     const unit = await prisma.unit.findUnique({ where: { id } });
     if (!unit) { const err = new Error('Unit not found'); err.statusCode = 404; throw err; }
-    return prisma.unit.update({ where: { id }, data });
+    const updated = await prisma.unit.update({ where: { id }, data });
+    await invalidateMasterdataCache();
+    return updated;
 };
 
 const deleteUnit = async (id) => {
     await prisma.unit.delete({ where: { id } });
+    await invalidateMasterdataCache();
 };
 
 // ── CATEGORY ─────────────────────────────────────────────────────
@@ -88,7 +110,7 @@ const createCategory = async ({ name, parentId, sortOrder }) => {
         throw err;
     }
 
-    return prisma.category.create({
+    const category = await prisma.category.create({
         data: {
             name,
             slug,
@@ -100,6 +122,8 @@ const createCategory = async ({ name, parentId, sortOrder }) => {
                 : undefined,
         },
     });
+    await invalidateCategoryCache();
+    return category;
 };
 
 const updateCategory = async (id, data) => {
@@ -110,7 +134,7 @@ const updateCategory = async (id, data) => {
     const parentId = data.parentId;
     delete data.parentId;
 
-    return prisma.category.update({
+    const category = await prisma.category.update({
         where: { id },
         data: {
             ...data,
@@ -123,6 +147,8 @@ const updateCategory = async (id, data) => {
                 },
         },
     });
+    await invalidateCategoryCache();
+    return category;
 };
 
 const deleteCategory = async (id) => {
@@ -133,26 +159,28 @@ const deleteCategory = async (id) => {
         throw err;
     }
     await prisma.category.delete({ where: { id } });
+    await invalidateCategoryCache();
 };
 
 // ── ATTRIBUTE ────────────────────────────────────────────────────
 
-const getAllAttributes = async () => {
-    return prisma.attribute.findMany({
-        where: { isActive: true },
-        include: {
-            values: {
-                orderBy: { sortOrder: "asc" },
+const getAllAttributes = async () =>
+    getOrSetCache(['masterdata'], ['attributes'], CACHE_TTL, () =>
+        prisma.attribute.findMany({
+            where: { isActive: true },
+            include: {
+                values: {
+                    orderBy: { sortOrder: "asc" },
+                },
             },
-        },
-        orderBy: { name: "asc" },
-    });
-};
+            orderBy: { name: "asc" },
+        }),
+    );
 
 const createAttribute = async ({ name, code, type, isRequired, isFilterable, options = [] }) => {
     const existing = await prisma.attribute.findUnique({ where: { code } });
     if (existing) { const err = new Error('Attribute code already exists'); err.statusCode = 409; throw err; }
-    return prisma.attribute.create({
+    const attribute = await prisma.attribute.create({
         data: {
             name,
             code,
@@ -171,13 +199,15 @@ const createAttribute = async ({ name, code, type, isRequired, isFilterable, opt
             values: { orderBy: { sortOrder: 'asc' } },
         },
     });
+    await invalidateMasterdataCache();
+    return attribute;
 };
 
 const updateAttribute = async (id, { name, code, type, isRequired, isFilterable, isActive, options }) => {
     if (options !== undefined) {
         await prisma.attributeValue.deleteMany({ where: { attributeId: id } });
     }
-    return prisma.attribute.update({
+    const attribute = await prisma.attribute.update({
         where: { id },
         data: {
             name,
@@ -200,30 +230,37 @@ const updateAttribute = async (id, { name, code, type, isRequired, isFilterable,
             values: { orderBy: { sortOrder: 'asc' } },
         },
     });
+    await invalidateMasterdataCache();
+    return attribute;
 };
 
 const deleteAttribute = async (id) => {
     await prisma.attributeValue.deleteMany({ where: { attributeId: id } });
     await prisma.attribute.delete({ where: { id } });
+    await invalidateMasterdataCache();
 };
 
 const addAttributeValue = async (attributeId, { label, value, sortOrder }) => {
     const attribute = await prisma.attribute.findUnique({ where: { id: attributeId } });
     if (!attribute) { const err = new Error('Attribute not found'); err.statusCode = 404; throw err; }
-    return prisma.attributeValue.create({
+    const attrValue = await prisma.attributeValue.create({
         data: { attributeId, label, value, sortOrder: sortOrder || 0 },
     });
+    await invalidateMasterdataCache();
+    return attrValue;
 };
 
 const deleteAttributeValue = async (valueId) => {
     await prisma.attributeValue.delete({ where: { id: valueId } });
+    await invalidateMasterdataCache();
 };
 
 // ── ORDER STATUS ──────────────────────────────────────────────────
 
-const getAllOrderStatuses = async () => {
-    return prisma.orderStatus.findMany({ orderBy: { sortOrder: 'asc' } });
-};
+const getAllOrderStatuses = async () =>
+    getOrSetCache(['masterdata'], ['order-statuses'], CACHE_TTL, () =>
+        prisma.orderStatus.findMany({ orderBy: { sortOrder: 'asc' } }),
+    );
 
 const createOrderStatus = async ({ label, code, color, isDefault, isFinal, sortOrder }) => {
     const existing = await prisma.orderStatus.findUnique({ where: { code: code.toUpperCase() } });
@@ -233,9 +270,11 @@ const createOrderStatus = async ({ label, code, color, isDefault, isFinal, sortO
         await prisma.orderStatus.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
 
-    return prisma.orderStatus.create({
+    const status = await prisma.orderStatus.create({
         data: { label, code: code.toUpperCase(), color, isDefault: isDefault || false, isFinal: isFinal || false, sortOrder: sortOrder || 0 },
     });
+    await invalidateMasterdataCache();
+    return status;
 };
 
 const updateOrderStatus = async (id, data) => {
@@ -243,7 +282,9 @@ const updateOrderStatus = async (id, data) => {
     if (data.isDefault) {
         await prisma.orderStatus.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
-    return prisma.orderStatus.update({ where: { id }, data });
+    const status = await prisma.orderStatus.update({ where: { id }, data });
+    await invalidateMasterdataCache();
+    return status;
 };
 
 const deleteOrderStatus = async (id) => {
@@ -260,28 +301,34 @@ const deleteOrderStatus = async (id) => {
         throw err;
     }
     await prisma.orderStatus.delete({ where: { id } });
+    await invalidateMasterdataCache();
 };
 
 // ── TAX CLASS ─────────────────────────────────────────────────────
 
-const getAllTaxClasses = async () => {
-    return prisma.taxClass.findMany({ orderBy: { rate: 'asc' } });
-};
+const getAllTaxClasses = async () =>
+    getOrSetCache(['masterdata'], ['tax-classes'], CACHE_TTL, () =>
+        prisma.taxClass.findMany({ orderBy: { rate: 'asc' } }),
+    );
 
 const createTaxClass = async ({ name, rate, isDefault }) => {
     if (isDefault) {
         await prisma.taxClass.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
-    return prisma.taxClass.create({
+    const taxClass = await prisma.taxClass.create({
         data: { name, rate, isDefault: isDefault || false },
     });
+    await invalidateMasterdataCache();
+    return taxClass;
 };
 
 const updateTaxClass = async (id, data) => {
     if (data.isDefault) {
         await prisma.taxClass.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
-    return prisma.taxClass.update({ where: { id }, data });
+    const taxClass = await prisma.taxClass.update({ where: { id }, data });
+    await invalidateMasterdataCache();
+    return taxClass;
 };
 
 const deleteTaxClass = async (id) => {
@@ -292,13 +339,15 @@ const deleteTaxClass = async (id) => {
         throw err;
     }
     await prisma.taxClass.delete({ where: { id } });
+    await invalidateMasterdataCache();
 };
 
 // ── PAYMENT MODE ──────────────────────────────────────────────────
 
-const getActivePaymentModes = async () => {
-    return prisma.paymentMode.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } });
-};
+const getActivePaymentModes = async () =>
+    getOrSetCache(['masterdata'], ['payment-modes-active'], CACHE_TTL, () =>
+        prisma.paymentMode.findMany({ where: { isActive: true }, orderBy: { sortOrder: 'asc' } }),
+    );
 
 /** Admin Settings — includes inactive so modes can be reactivated. */
 const getAllPaymentModes = async () => {
@@ -308,7 +357,7 @@ const getAllPaymentModes = async () => {
 const createPaymentMode = async ({ label, code, isOnline, sortOrder, isActive }) => {
     const existing = await prisma.paymentMode.findUnique({ where: { code: code.toUpperCase() } });
     if (existing) { const err = new Error('Payment mode code already exists'); err.statusCode = 409; throw err; }
-    return prisma.paymentMode.create({
+    const mode = await prisma.paymentMode.create({
         data: {
             label,
             code: code.toUpperCase(),
@@ -317,11 +366,15 @@ const createPaymentMode = async ({ label, code, isOnline, sortOrder, isActive })
             isActive: isActive !== undefined ? Boolean(isActive) : true,
         },
     });
+    await invalidateMasterdataCache();
+    return mode;
 };
 
 const updatePaymentMode = async (id, data) => {
     if (data.code) data.code = data.code.toUpperCase();
-    return prisma.paymentMode.update({ where: { id }, data });
+    const mode = await prisma.paymentMode.update({ where: { id }, data });
+    await invalidateMasterdataCache();
+    return mode;
 };
 
 const deletePaymentMode = async (id) => {
@@ -339,13 +392,15 @@ const deletePaymentMode = async (id) => {
         throw err;
     }
     await prisma.paymentMode.delete({ where: { id } });
+    await invalidateMasterdataCache();
 };
 
 // ── CURRENCY ──────────────────────────────────────────────────────
 
-const getAllCurrencies = async () => {
-    return prisma.currency.findMany({ where: { isActive: true }, orderBy: { isDefault: 'desc' } });
-};
+const getAllCurrencies = async () =>
+    getOrSetCache(['masterdata'], ['currencies'], CACHE_TTL, () =>
+        prisma.currency.findMany({ where: { isActive: true }, orderBy: { isDefault: 'desc' } }),
+    );
 
 const createCurrency = async ({ code, name, symbol, symbolPosition, decimalSeparator, thousandSeparator, exchangeRate, isDefault }) => {
     const existing = await prisma.currency.findUnique({ where: { code: code.toUpperCase() } });
@@ -353,16 +408,20 @@ const createCurrency = async ({ code, name, symbol, symbolPosition, decimalSepar
     if (isDefault) {
         await prisma.currency.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
-    return prisma.currency.create({
+    const currency = await prisma.currency.create({
         data: { code: code.toUpperCase(), name, symbol, symbolPosition: symbolPosition || 'before', decimalSeparator: decimalSeparator || '.', thousandSeparator: thousandSeparator || ',', exchangeRate: exchangeRate || 1, isDefault: isDefault || false },
     });
+    await invalidateMasterdataCache();
+    return currency;
 };
 
 const updateCurrency = async (id, data) => {
     if (data.isDefault) {
         await prisma.currency.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
     }
-    return prisma.currency.update({ where: { id }, data });
+    const currency = await prisma.currency.update({ where: { id }, data });
+    await invalidateMasterdataCache();
+    return currency;
 };
 
 const deleteCurrency = async (id) => {
@@ -373,6 +432,7 @@ const deleteCurrency = async (id) => {
         throw err;
     }
     await prisma.currency.delete({ where: { id } });
+    await invalidateMasterdataCache();
 };
 
 // ─── HELPER — used by order/payment services ──────────────────────
