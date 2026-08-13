@@ -1,8 +1,11 @@
 const prisma = require('../../config/db');
+const slugify = require('../../utils/slugify');
 const { getOrSetCache, invalidateNamespace } = require('../../utils/cache');
 
 const CACHE_TTL = 300;
 const invalidateHomeImageCache = () => invalidateNamespace('cmshomeimage');
+
+const VALID_SECTIONS = new Set(['category-archive', 'promo-banners', 'brand-intro']);
 
 const DEFAULT_SLOTS = [
     {
@@ -165,9 +168,58 @@ const updateHomeImage = async (id, data) => {
     return mapHomeImage(row);
 };
 
+const createHomeImage = async ({ section, title, subtitle, linkUrl, isActive }) => {
+    if (!VALID_SECTIONS.has(section)) {
+        const err = new Error(`Invalid section. Must be one of: ${[...VALID_SECTIONS].join(', ')}`);
+        err.statusCode = 400;
+        throw err;
+    }
+
+    if (!title || !title.trim()) {
+        const err = new Error('Title is required');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    let slotKey = slugify(title);
+    const existing = await prisma.cmsHomeImage.findUnique({ where: { slotKey } });
+    if (existing) {
+        slotKey = `${slotKey}-${Date.now()}`;
+    }
+
+    const maxOrder = await prisma.cmsHomeImage.aggregate({
+        where: { section },
+        _max: { sortOrder: true },
+    });
+
+    const row = await prisma.cmsHomeImage.create({
+        data: {
+            slotKey,
+            section,
+            title: title.trim(),
+            subtitle: subtitle ?? '',
+            linkUrl: linkUrl || '/collection',
+            sortOrder: (maxOrder._max.sortOrder ?? -1) + 1,
+            isActive: isActive ?? true,
+        },
+    });
+
+    await invalidateHomeImageCache();
+
+    return mapHomeImage(row);
+};
+
+const deleteHomeImage = async (id) => {
+    await getHomeImageById(id);
+    await prisma.cmsHomeImage.delete({ where: { id } });
+    await invalidateHomeImageCache();
+};
+
 module.exports = {
     getAllHomeImages,
     getPublicHomeImages,
     getHomeImageById,
     updateHomeImage,
+    createHomeImage,
+    deleteHomeImage,
 };

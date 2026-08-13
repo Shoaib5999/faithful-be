@@ -1,5 +1,5 @@
 const cmsHomeImageService = require('./cms-home-image.service');
-const { success } = require('../../utils/response');
+const { success, error } = require('../../utils/response');
 
 const getAll = async (req, res, next) => {
     try {
@@ -28,8 +28,32 @@ const update = async (req, res, next) => {
     }
 };
 
+const create = async (req, res, next) => {
+    try {
+        const { section, title } = req.body;
+        if (!section || !title) {
+            return error(res, 'section and title are required', 400);
+        }
+        const homeImage = await cmsHomeImageService.createHomeImage(req.body);
+        return success(res, homeImage, 'Home image created', 201);
+    } catch (err) {
+        next(err);
+    }
+};
+
+const remove = async (req, res, next) => {
+    try {
+        await cmsHomeImageService.deleteHomeImage(req.params.id);
+        return success(res, null, 'Home image deleted');
+    } catch (err) {
+        next(err);
+    }
+};
+
 module.exports = {
     getAll,
     getById,
     update,
+    create,
+    remove,
 };

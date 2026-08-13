@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c src/modules/product/product.service.js)",
+      "Bash(node -c src/modules/category/category.service.js)",
+      "Bash(node -c src/modules/cut-type/cut-type.service.js)",
+      "Bash(node -c src/modules/giftset/giftset.service.js)",
+      "Bash(node -c src/modules/masterdata/masterdata.service.js)",
+      "Bash(node -c src/modules/cms-slider/cms-slider.service.js)",
+      "Bash(node -c src/modules/cms-home-image/cms-home-image.service.js)",
+      "Bash(node -c src/modules/storefront/storefront.controller.js)",
+      "Bash(node -c src/modules/search/search.service.js)",
+      "Bash(node -c server.js)"
+    ]
+  }
+}
