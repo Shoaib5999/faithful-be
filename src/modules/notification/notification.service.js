@@ -1,6 +1,7 @@
 const prisma = require('../../config/db');
 const { sendEmail } = require('../../config/mailer');
 const { getStoreName } = require('../../config/store');
+const { sendNtfyNotification } = require('../../config/ntfy');
 const {
     welcomeTemplate,
     orderConfirmationTemplate,
@@ -8,14 +9,14 @@ const {
     refundProcessedTemplate,
 } = require('../../utils/email-templates');
 
-const logNotification = async ({ userId, orderId, type, status, provider, error }) => {
+const logNotification = async ({ userId, orderId, type, channel = 'email', status, provider, error }) => {
     try {
         await prisma.notificationLog.create({
             data: {
                 userId: userId || null,
                 orderId: orderId || null,
                 type,
-                channel: 'email',
+                channel,
                 status,
                 provider: provider || null,
                 error: error || null,
@@ -158,6 +159,62 @@ const sendOrderStatusEmail = async (order, tracking = null) => {
     }
 };
 
+// Optional deep link into the admin panel for the shop's notification action button.
+// Template may contain an {orderId} placeholder; otherwise the id is appended as a path segment.
+// Left unset (ADMIN_ORDER_URL not configured), the notification is sent without a click URL.
+const buildAdminOrderUrl = (orderId) => {
+    const template = process.env.ADMIN_ORDER_URL?.trim();
+    if (!template) return undefined;
+
+    return template.includes('{orderId}')
+        ? template.replace('{orderId}', encodeURIComponent(orderId))
+        : `${template.replace(/\/$/, '')}/${encodeURIComponent(orderId)}`;
+};
+
+const sendOrderConfirmedPush = async (order) => {
+    try {
+        const { formatPublicOrderNumber } = require('../../utils/order-number');
+        const orderNumber = formatPublicOrderNumber(order.id);
+        const user = await prisma.user.findUnique({ where: { id: order.userId } });
+        const customerName = user?.name;
+        const currencyCode = order.currency?.code ? `${order.currency.code} ` : '';
+
+        const messageLines = [
+            `Order #${orderNumber}`,
+            customerName ? `Customer: ${customerName}` : null,
+            `Total: ${currencyCode}${Number(order.total).toFixed(2)}`,
+            'Start preparing this order.',
+        ].filter(Boolean);
+
+        await sendNtfyNotification({
+            title: 'NEW ORDER CONFIRMED',
+            message: messageLines.join('\n'),
+            priority: 5,
+            click: buildAdminOrderUrl(order.id),
+        });
+
+        await logNotification({
+            userId: order.userId,
+            orderId: order.id,
+            type: 'order_confirmed_push',
+            channel: 'ntfy',
+            status: 'sent',
+            provider: 'ntfy',
+        });
+    } catch (err) {
+        await logNotification({
+            userId: order.userId,
+            orderId: order.id,
+            type: 'order_confirmed_push',
+            channel: 'ntfy',
+            status: 'failed',
+            provider: 'ntfy',
+            error: err.message,
+        });
+        console.error('Order confirmed push notification failed:', err.message);
+    }
+};
+
 const sendRefundEmail = async (orderId, amount, reason) => {
     try {
         const order = await prisma.order.findUnique({
@@ -204,5 +261,6 @@ module.exports = {
     sendWelcomeEmail,
     sendOrderConfirmationEmail,
     sendOrderStatusEmail,
+    sendOrderConfirmedPush,
     sendRefundEmail,
 };
