@@ -244,6 +244,13 @@ const placeOrder = async (
             .catch(console.error);
     });
 
+    // Alert the shop the moment the order is placed — no admin confirmation step required.
+    setImmediate(() => {
+        notificationService
+            .sendOrderConfirmedPush(order)
+            .catch(console.error);
+    });
+
     return order;
 };
 
