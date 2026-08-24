@@ -2,6 +2,8 @@ const authService = require('./auth.service');
 const { success, error } = require('../../utils/response');
 const { getFrontendUrl } = require('../../utils/frontend-url');
 
+const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
+
 const register = async (req, res, next) => {
     try {
         const { name, email, password } = req.body;
@@ -30,6 +32,37 @@ const login = async (req, res, next) => {
         }
 
         const data = await authService.login({ email, password });
+        return success(res, data, 'Login successful');
+    } catch (err) {
+        next(err);
+    }
+};
+
+const requestPhoneOtp = async (req, res, next) => {
+    try {
+        const { phone } = req.body;
+        if (!INDIAN_MOBILE_REGEX.test(String(phone || ''))) {
+            return error(res, 'Enter a valid 10-digit mobile number', 400);
+        }
+
+        await authService.requestPhoneOtp(phone);
+        return success(res, null, 'OTP sent');
+    } catch (err) {
+        next(err);
+    }
+};
+
+const verifyPhoneOtp = async (req, res, next) => {
+    try {
+        const { phone, otp } = req.body;
+        if (!INDIAN_MOBILE_REGEX.test(String(phone || ''))) {
+            return error(res, 'Enter a valid 10-digit mobile number', 400);
+        }
+        if (!/^\d{4,9}$/.test(String(otp || ''))) {
+            return error(res, 'Enter the code sent to your phone', 400);
+        }
+
+        const data = await authService.verifyPhoneOtpAndLogin(phone, otp);
         return success(res, data, 'Login successful');
     } catch (err) {
         next(err);
@@ -163,6 +196,8 @@ const changePassword = async (req, res, next) => {
 module.exports = {
     register,
     login,
+    requestPhoneOtp,
+    verifyPhoneOtp,
     googleCallback,
     refreshToken,
     logout,

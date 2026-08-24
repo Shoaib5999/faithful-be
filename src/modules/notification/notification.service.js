@@ -27,6 +27,8 @@ const logNotification = async ({ userId, orderId, type, status, provider, error 
 };
 
 const sendWelcomeEmail = async (user) => {
+    if (!user?.email) return;
+
     try {
         const html = welcomeTemplate({ name: user.name });
         const result = await sendEmail({
@@ -55,6 +57,8 @@ const sendWelcomeEmail = async (user) => {
 const sendOrderConfirmationEmail = async (order) => {
     try {
         const user = await prisma.user.findUnique({ where: { id: order.userId } });
+        if (!user?.email) return;
+
         const fullOrder = await prisma.order.findUnique({
             where: { id: order.id },
             include: {
@@ -108,8 +112,11 @@ const sendOrderConfirmationEmail = async (order) => {
 };
 
 const sendOrderStatusEmail = async (order, tracking = null) => {
+    let statusCode;
     try {
         const user = await prisma.user.findUnique({ where: { id: order.userId } });
+        if (!user?.email) return;
+
         const { formatPublicOrderNumber } = require('../../utils/order-number');
         const orderNumber = formatPublicOrderNumber(order.id);
 
@@ -121,7 +128,7 @@ const sendOrderStatusEmail = async (order, tracking = null) => {
             storeTrackUrl = undefined;
         }
 
-        const statusCode = order.status?.code || order.status;
+        statusCode = order.status?.code || order.status;
         const html = orderStatusTemplate({
             name: user.name,
             order,

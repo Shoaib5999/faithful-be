@@ -3,7 +3,12 @@ const router = express.Router();
 const passport = require('../../config/passport');
 const authController = require('./auth.controller');
 const { getFrontendUrl } = require('../../utils/frontend-url');
-const { registerValidator, loginValidator } = require('../../middlewares/validate.middleware');
+const {
+    registerValidator,
+    loginValidator,
+    requestPhoneOtpValidator,
+    verifyPhoneOtpValidator,
+} = require('../../middlewares/validate.middleware');
 const { authenticate } = require('../../middlewares/auth.middleware');
 const rateLimit = require('express-rate-limit');
 
@@ -14,9 +19,19 @@ const resetLimiter = rateLimit({
     message: { success: false, message: 'Too many reset attempts. Try again in 15 minutes.' },
 });
 
+// OTP requests cost real money per SMS (unlike Firebase's client-side reCAPTCHA
+// gate, MSG91 has no abuse check upstream of this endpoint) — keep this tight.
+const otpRequestLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { success: false, message: 'Too many OTP requests. Try again in 15 minutes.' },
+});
+
 // Public routes
 router.post('/register', registerValidator, authController.register);
 router.post('/login', loginValidator, authController.login);
+router.post('/phone/request-otp', otpRequestLimiter, requestPhoneOtpValidator, authController.requestPhoneOtp);
+router.post('/phone/verify-otp', verifyPhoneOtpValidator, authController.verifyPhoneOtp);
 router.post('/refresh-token', authController.refreshToken);
 router.post('/logout', authController.logout);
 

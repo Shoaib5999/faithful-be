@@ -184,7 +184,9 @@ const createShiprocketOrder = async (orderId) => {
         billing_pincode: order.address.pincode,
         billing_state: order.address.state,
         billing_country: 'India',
-        billing_email: order.user.email,
+        // Phone-only accounts have no email — Shiprocket gets the store's own
+        // address rather than null, since this field feeds an external API.
+        billing_email: order.user.email || process.env.STORE_EMAIL || 'orders@faithfulmeat.com',
         billing_phone: order.address.phone,
         shipping_is_billing: true,
         order_items: orderItems,

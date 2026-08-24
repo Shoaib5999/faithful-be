@@ -23,6 +23,17 @@ const loginValidator = [
     validate,
 ];
 
+const requestPhoneOtpValidator = [
+    body('phone').matches(/^[6-9]\d{9}$/).withMessage('Enter a valid 10-digit mobile number'),
+    validate,
+];
+
+const verifyPhoneOtpValidator = [
+    body('phone').matches(/^[6-9]\d{9}$/).withMessage('Enter a valid 10-digit mobile number'),
+    body('otp').matches(/^\d{4,9}$/).withMessage('Enter the code sent to your phone'),
+    validate,
+];
+
 // Product validators
 const createProductValidator = [
     body('name').trim().notEmpty().withMessage('Product name is required'),
@@ -61,6 +72,8 @@ module.exports = {
     validate,
     registerValidator,
     loginValidator,
+    requestPhoneOtpValidator,
+    verifyPhoneOtpValidator,
     createProductValidator,
     placeOrderValidator,
     reviewValidator,

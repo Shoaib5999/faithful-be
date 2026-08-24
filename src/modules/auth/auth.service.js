@@ -10,6 +10,7 @@ const { sendEmail } = require('../../config/mailer');
 const { getStoreName } = require('../../config/store');
 const { passwordResetTemplate, emailVerificationTemplate } = require('../../utils/email-templates');
 const notificationService = require('../notification/notification.service');
+const msg91 = require('../../config/msg91');
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 const EMAIL_VERIFICATION_EXPIRY_HOURS = 24;
@@ -143,6 +144,50 @@ const handleGoogleAuth = async (user) => {
             data: { emailVerifiedAt: new Date() },
         });
         user.emailVerifiedAt = new Date();
+    }
+
+    return createSessionTokens(user);
+};
+
+const requestPhoneOtp = async (phone) => {
+    await msg91.requestOtp(phone);
+};
+
+// MSG91 owns OTP generation/storage/expiry — verifyOtp() is the only check that
+// this phone number was actually proven. Once it passes, find-or-create the
+// local User row and hand back the same session shape every other login path
+// uses (mirrors handleGoogleAuth's role for Google sign-in).
+const verifyPhoneOtpAndLogin = async (phone, otp) => {
+    const verified = await msg91.verifyOtp(phone, otp);
+    if (!verified) {
+        const err = new Error('That code is incorrect or has expired.');
+        err.statusCode = 401;
+        throw err;
+    }
+
+    let user = await prisma.user.findUnique({ where: { phone } });
+
+    if (!user) {
+        user = await prisma.user.create({
+            data: {
+                name: `Customer ${phone.slice(-4)}`,
+                phone,
+                role: 'CUSTOMER',
+                isActive: true,
+            },
+        });
+
+        if (user.email) {
+            setImmediate(() => {
+                notificationService.sendWelcomeEmail(user).catch(console.error);
+            });
+        }
+    }
+
+    if (!user.isActive) {
+        const err = new Error('Your account has been deactivated');
+        err.statusCode = 403;
+        throw err;
     }
 
     return createSessionTokens(user);
@@ -483,6 +528,8 @@ module.exports = {
     register,
     login,
     handleGoogleAuth,
+    requestPhoneOtp,
+    verifyPhoneOtpAndLogin,
     verifyEmail,
     resendVerificationEmail,
     refreshAccessToken,
