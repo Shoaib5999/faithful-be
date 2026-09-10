@@ -122,6 +122,7 @@ const createProduct = async ({
                                 : null,
                         stockQty: Number(v.stockQty) || 0,
                         sku: normalizeSKU(v.sku),
+                        unitId: v.unitId || null,
                     })),
                 },
             },
@@ -628,7 +629,7 @@ const deleteProduct = async (id) => {
     await invalidateProductCache();
 };
 
-const addVariant = async (productId, { weightGrams, price, compareAtPrice, stockQty, sku }) => {
+const addVariant = async (productId, { weightGrams, price, compareAtPrice, stockQty, sku, unitId }) => {
     const normalizedSKU = normalizeSKU(sku);
     await ensureUniqueVariantSKUs([{ sku: normalizedSKU }]);
 
@@ -643,6 +644,7 @@ const addVariant = async (productId, { weightGrams, price, compareAtPrice, stock
                     : null,
             stockQty: Number(stockQty) || 0,
             sku: normalizedSKU,
+            unitId: unitId || null,
         },
     });
 
@@ -663,6 +665,10 @@ const updateVariant = async (
             [{ sku: updateData.sku }],
             { excludeVariantId: variantId },
         );
+    }
+
+    if (updateData.unitId !== undefined) {
+        updateData.unitId = updateData.unitId || null;
     }
 
     const variant = await prisma.productVariant.update({

@@ -144,6 +144,8 @@ model Unit {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  variants ProductVariant[]
 }
 
 model Brand {
@@ -317,6 +319,9 @@ model ProductVariant {
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  unitId String?
+  unit   Unit?   @relation(fields: [unitId], references: [id])
 
   cartItems   CartItem[]
   orderItems  OrderItem[]
