@@ -9,6 +9,7 @@ const getOrCreateCart = async (userId) => {
                 include: {
                     variant: {
                         include: {
+                            unit: { select: { symbol: true } },
                             product: {
                                 include: {
                                     images: { where: { isPrimary: true } },
@@ -256,6 +257,7 @@ const buildCartSummaryFromItems = async (
             isActive: true,
         },
         include: {
+            unit: { select: { symbol: true } },
             product: {
                 include: {
                     images: { where: { isPrimary: true } },

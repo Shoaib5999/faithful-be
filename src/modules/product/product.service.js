@@ -202,7 +202,10 @@ const getAdminProducts = async ({
         prisma.product.findMany({
             where,
             include: {
-                variants: { orderBy: { weightGrams: 'asc' } },
+                variants: {
+                    orderBy: { weightGrams: 'asc' },
+                    include: { unit: { select: { symbol: true } } },
+                },
                 images: { orderBy: { sortOrder: 'asc' } },
                 category: true,
                 brand: {
@@ -343,6 +346,9 @@ const fetchAllProducts = async ({
             where: {
                 isActive: true,
             },
+            include: {
+                unit: { select: { symbol: true } },
+            },
         },
         images: {
             orderBy: {
@@ -447,6 +453,9 @@ const fetchProductById = async (id) => {
                     where: {
                         isActive: true,
                     },
+                    include: {
+                        unit: { select: { symbol: true } },
+                    },
                 },
 
                 images: {
@@ -521,6 +530,9 @@ const fetchProductBySlug = async (slug) => {
             variants: {
                 where: { isActive: true },
                 orderBy: { weightGrams: 'asc' },
+                include: {
+                    unit: { select: { symbol: true } },
+                },
             },
             images: { orderBy: { sortOrder: 'asc' } },
             category: true,

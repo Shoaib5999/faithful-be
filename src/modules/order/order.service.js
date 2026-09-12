@@ -286,6 +286,7 @@ const getUserOrders = async (
                     include: {
                         variant: {
                             include: {
+                                unit: { select: { symbol: true } },
                                 product: {
                                     include: {
                                         images: {
@@ -355,6 +356,7 @@ const getOrderById = async (
                 include: {
                     variant: {
                         include: {
+                            unit: { select: { symbol: true } },
                             product: {
                                 include: {
                                     images: {
@@ -569,6 +571,7 @@ const getAllOrders = async ({
                     include: {
                         variant: {
                             include: {
+                                unit: { select: { symbol: true } },
                                 product: {
                                     include: {
                                         images: {
@@ -756,6 +759,7 @@ const resolveOrderForTracking = async (orderRef) => {
             include: {
                 variant: {
                     include: {
+                        unit: { select: { symbol: true } },
                         product: {
                             include: {
                                 images: { where: { isPrimary: true } },
