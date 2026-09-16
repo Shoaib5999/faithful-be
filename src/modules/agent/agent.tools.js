@@ -1,3 +1,4 @@
+const prisma = require('../../config/db');
 const productService = require('../product/product.service');
 const cartService = require('../cart/cart.service');
 const orderService = require('../order/order.service');
@@ -217,11 +218,49 @@ const tools = {
             if (!context.userId) {
                 // Guest carts live in the browser. Rather than pretend to have
                 // added it, hand the client a proposal it can apply locally —
-                // the widget surfaces this as a one-tap confirm.
+                // the widget surfaces this as a one-tap confirm. The proposal
+                // carries the display fields a cart line needs, since the
+                // browser cannot look them up from a variant id alone.
+                const variant = await prisma.productVariant.findUnique({
+                    where: { id: variantId },
+                    include: {
+                        unit: { select: { symbol: true } },
+                        product: {
+                            select: {
+                                name: true,
+                                category: { select: { slug: true } },
+                                images: {
+                                    where: { isPrimary: true },
+                                    select: { url: true },
+                                    take: 1,
+                                },
+                            },
+                        },
+                    },
+                });
+
+                if (!variant || !variant.isActive) {
+                    return { added: false, error: 'That item is no longer available.' };
+                }
+                if ((variant.stockQty ?? 0) < qty) {
+                    return { added: false, error: 'There is not enough stock for that quantity.' };
+                }
+
+                const unitLabel = variant.unit?.symbol || 'g';
                 return {
                     added: false,
                     requiresClientAction: true,
-                    proposal: { variantId, quantity: qty },
+                    proposal: {
+                        variantId,
+                        quantity: qty,
+                        name: variant.product?.name || 'Item',
+                        image: variant.product?.images?.[0]?.url || '',
+                        price: INR(variant.price),
+                        priceNumber: Number(variant.price),
+                        notes: `${variant.weightGrams}${unitLabel}`,
+                        categorySlug: variant.product?.category?.slug || undefined,
+                        stockQty: variant.stockQty ?? undefined,
+                    },
                     message:
                         'The customer is not signed in. Tell them you have prepared the item and they can confirm adding it, or sign in to save their cart.',
                 };

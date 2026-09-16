@@ -44,6 +44,15 @@ const config = {
     },
 
     maxMessageLength: Number(process.env.AGENT_MAX_MESSAGE_LENGTH) || 2000,
+
+    /** Speech-to-text, through the same gateway. */
+    transcriptionModel: (process.env.AGENT_TRANSCRIPTION_MODEL || 'whisper-large-v3-turbo').trim(),
+    // Indian English is the store's audience; naming it beats per-clip guessing,
+    // which can misfire badly on short utterances and product names.
+    transcriptionLanguage: (process.env.AGENT_TRANSCRIPTION_LANGUAGE || 'en').trim(),
+    transcriptionTimeoutMs: Number(process.env.AGENT_TRANSCRIPTION_TIMEOUT_MS) || 30_000,
+    /** A voice clip should be seconds long; this is a generous ceiling. */
+    maxAudioBytes: Number(process.env.AGENT_MAX_AUDIO_BYTES) || 8 * 1024 * 1024,
 };
 
 /** The agent is optional infrastructure — the store works fine without it. */
