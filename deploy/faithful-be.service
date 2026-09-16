@@ -1,0 +1,56 @@
+[Unit]
+Description=Faithful Meat backend API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=faithful
+Group=faithful
+WorkingDirectory=/opt/faithful-be
+
+# Secrets live here, readable only by the service user — never in this unit,
+# which is world-readable via `systemctl cat`.
+EnvironmentFile=/opt/faithful-be/.env
+
+ExecStart=/usr/bin/node /opt/faithful-be/server.js
+
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=faithful-be
+
+# ── Hardening ──
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+# MemoryDenyWriteExecute is deliberately NOT set: V8 needs writable-executable
+# mappings for JIT, and enabling it makes node abort on startup.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+ReadWritePaths=
+
+# Shares a 2GB box with the AI gateway, so this is capped well short of the
+# host's total. Prisma plus Express sits far below this in practice.
+MemoryMax=768M
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target
