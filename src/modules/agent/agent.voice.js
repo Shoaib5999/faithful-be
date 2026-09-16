@@ -43,7 +43,33 @@ const isSupportedAudio = (mimetype) => {
     return ALLOWED_MIME.has(base);
 };
 
-const transcribe = async ({ buffer, mimetype, signal }) => {
+/**
+ * UI language -> Whisper language code.
+ *
+ * This used to be hard-coded to the config default ('en') for every clip,
+ * regardless of what the customer actually spoke — forcing Hindi audio through
+ * an English decoder produces confident-sounding English words that are not
+ * what was said (verified: "kaise ho aap" decoded as English came back
+ * "Can see who up?"). The fix is to pass the customer's selected language
+ * through from the client on every request.
+ *
+ * Whisper has no distinct "Hinglish" code; Hindi spoken with English words
+ * mixed in still decodes far better against 'hi' than against 'en'. The
+ * script that comes back (Devanagari) does not have to match the reply
+ * script — the model reads Devanagari fine and is separately instructed
+ * what script to reply in.
+ */
+const LANGUAGE_TO_WHISPER_CODE = {
+    en: 'en',
+    hi: 'hi',
+    hinglish: 'hi',
+};
+
+const resolveWhisperLanguage = (language) =>
+    LANGUAGE_TO_WHISPER_CODE[String(language || '').trim().toLowerCase()] ||
+    config.transcriptionLanguage;
+
+const transcribe = async ({ buffer, mimetype, signal, language }) => {
     if (!buffer || buffer.length === 0) {
         const err = new Error('No audio was received.');
         err.statusCode = 400;
@@ -68,7 +94,7 @@ const transcribe = async ({ buffer, mimetype, signal }) => {
     form.append('model', config.transcriptionModel);
     form.append('response_format', 'json');
     // Biases the decoder toward the right language instead of guessing per clip.
-    form.append('language', config.transcriptionLanguage);
+    form.append('language', resolveWhisperLanguage(language));
 
     const controller = new AbortController();
     const timer = setTimeout(

@@ -18,7 +18,7 @@ const chat = async (req, res, next) => {
             return error(res, 'The shopping assistant is not available right now.', 503);
         }
 
-        const { message } = req.body || {};
+        const { message, language } = req.body || {};
         // A client-supplied session id only scopes conversation history; it
         // grants no access, so an attacker guessing one gains nothing but a
         // stranger's product chatter. Cart and order access is bound to the
@@ -54,6 +54,7 @@ const chat = async (req, res, next) => {
             sessionId,
             context,
             signal: controller.signal,
+            language,
         });
 
         return success(
@@ -63,6 +64,7 @@ const chat = async (req, res, next) => {
                 reply: result.reply,
                 toolsUsed: result.toolsUsed,
                 clientActions: result.clientActions,
+                products: result.products,
             },
             'Reply generated',
         );
@@ -125,6 +127,7 @@ const transcribe = async (req, res, next) => {
         const { transcript } = await agentVoice.transcribe({
             buffer: req.file.buffer,
             mimetype: req.file.mimetype,
+            language: req.body?.language,
             signal: controller.signal,
         });
 

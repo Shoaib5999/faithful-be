@@ -1,5 +1,6 @@
 const prisma = require('../../config/db');
 const productService = require('../product/product.service');
+const { searchProducts } = require('../search/search.service');
 const cartService = require('../cart/cart.service');
 const orderService = require('../order/order.service');
 const categoryService = require('../category/category.service');
@@ -55,6 +56,10 @@ const summariseProduct = (product) => {
     return {
         slug: product.slug,
         name: product.name,
+        // Used by the storefront to render a real product card in the chat —
+        // not read by the model itself, but harmless (small) to include in
+        // its context either way.
+        image: product.images?.[0]?.url || null,
         category: product.category?.name || null,
         priceFrom: variants.length ? Math.min(...variants.map((v) => v.price)) : null,
         variants,
@@ -91,8 +96,15 @@ const tools = {
             },
         },
         handler: async ({ query, categorySlug, maxPrice, minPrice }) => {
-            const result = await productService.getAllProducts({
-                search: cleanSearchQuery(query),
+            // Uses the store's real search endpoint (Postgres full-text search),
+            // not a plain substring match. That matters for exactly the kind of
+            // query this tool gets a lot of: multi-word and in whatever order the
+            // customer said it. A literal-substring match is order-sensitive —
+            // "chicken boneless" would not match a product named "Chicken Breast
+            // Boneless" — while full-text search matches on the words present,
+            // in any order, and ranks the best match first.
+            const result = await searchProducts({
+                q: cleanSearchQuery(query),
                 categorySlug: categorySlug || undefined,
                 minPrice: minPrice != null ? Number(minPrice) : undefined,
                 maxPrice: maxPrice != null ? Number(maxPrice) : undefined,
@@ -100,7 +112,7 @@ const tools = {
                 page: 1,
             });
 
-            const products = (result?.products || result?.data || []).map(summariseProduct);
+            const products = (result?.products || []).map(summariseProduct);
             return {
                 count: products.length,
                 products,
