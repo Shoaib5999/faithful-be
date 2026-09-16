@@ -177,12 +177,12 @@ const getAdminProducts = async ({
 
     if (search) {
         where.OR = [
-            { name: { contains: search } },
-            { description: { contains: search } },
-            { tags: { contains: search } },
-            { slug: { contains: search } },
-            { brand: { is: { name: { contains: search } } } },
-            { variants: { some: { sku: { contains: search } } } },
+            { name: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+            { tags: { contains: search, mode: 'insensitive' } },
+            { slug: { contains: search, mode: 'insensitive' } },
+            { brand: { is: { name: { contains: search, mode: 'insensitive' } } } },
+            { variants: { some: { sku: { contains: search, mode: 'insensitive' } } } },
         ];
     }
 
@@ -268,14 +268,14 @@ const fetchAllProducts = async ({
 
     if (search) {
         where.OR = [
-            { name: { contains: search } },
-            { description: { contains: search } },
-            { tags: { contains: search } },
-            { slug: { contains: search } },
+            { name: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+            { tags: { contains: search, mode: 'insensitive' } },
+            { slug: { contains: search, mode: 'insensitive' } },
             {
                 brand: {
                     is: {
-                        name: { contains: search },
+                        name: { contains: search, mode: 'insensitive' },
                     },
                 },
             },

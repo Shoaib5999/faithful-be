@@ -35,6 +35,7 @@ const cmsHomeImageRoutes = require('./src/modules/cms-home-image/cms-home-image.
 const cutTypeRoutes = require('./src/modules/cut-type/cut-type.routes');
 const contactRoutes = require('./src/modules/contact/contact.routes');
 const newsletterRoutes = require('./src/modules/newsletter/newsletter.routes');
+const agentRoutes = require('./src/modules/agent/agent.routes');
 const paymentController = require('./src/modules/payment/payment.controller');
 const sitemapController = require('./src/modules/sitemap/sitemap.controller');
 
@@ -111,6 +112,14 @@ const searchLimiter = rateLimit({
     message: { success: false, message: 'Too many search requests.' },
 });
 
+// Agent limiter — each turn costs upstream tokens, so this is deliberately
+// tighter than the general API limit. Per-session limits apply on top.
+const agentLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    message: { success: false, message: 'Too many assistant requests.' },
+});
+
 // Upload limiter
 const uploadLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -169,6 +178,7 @@ app.use('/api/cms/home-images', cmsHomeImageRoutes);
 app.use('/api/cut-types', cutTypeRoutes);
 app.use('/api/contact', formLimiter, contactRoutes);
 app.use('/api/newsletter', formLimiter, newsletterRoutes);
+app.use('/api/agent', agentLimiter, agentRoutes);
 
 // ─── 404 HANDLER ─────────────────────────────────────────────────
 app.use((req, res) => {
